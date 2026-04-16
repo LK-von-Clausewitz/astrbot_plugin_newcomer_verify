@@ -13,10 +13,10 @@ from astrbot.api.star import Context, Star, register
 
 @register(
     "newcomer_verify",
-    "LK-von-Clausewitz",
+    "AI Assistant",
     "QQ群新人入群验证插件：向新人发送私聊验证，超时未回应则在群内公布并通知管理员",
     "1.0.0",
-    "https://github.com/LK-von-Clausewitz/astrbot_plugin_newcomer_verify",
+    "https://github.com/yourname/astrbot_plugin_newcomer_verify",
 )
 class NewcomerVerifyPlugin(Star):
     def __init__(self, context: Context, config: dict):
@@ -123,12 +123,16 @@ class NewcomerVerifyPlugin(Star):
         welcome_msg = str(self.config.get("welcome_message", ""))
         welcome_msg = welcome_msg.replace("{timeout}", str(timeout_minutes))
 
-        # 发送私聊验证消息
-        send_ok = await self._send_private_msg(event, user_id, welcome_msg)
+        # 发送私聊验证消息（携带 group_id 以触发 NapCat 临时会话）
+        send_ok = await self._send_private_msg(
+            event, user_id, welcome_msg, group_id=group_id
+        )
         if not send_ok:
             logger.warning(
-                f"[NewcomerVerify] 私聊发送失败，跳过本次验证: {user_id}"
+                f"[NewcomerVerify] 临时会话发送失败，改为在群内 @ 提醒: {user_id}"
             )
+            # 兜底：在群内 @ 新人提醒验证
+            await self._fallback_group_remind(event, group_id, user_id, welcome_msg)
             return
 
         key = f"{group_id}:{user_id}"
@@ -147,16 +151,20 @@ class NewcomerVerifyPlugin(Star):
         self.pending_tasks[key] = task
 
     async def _send_private_msg(
-        self, event: AstrMessageEvent, user_id: str, message: str
+        self,
+        event: AstrMessageEvent,
+        user_id: str,
+        message: str,
+        group_id: str = "",
     ) -> bool:
-        """尝试向指定 QQ 发送私聊消息，优先使用标准 API，失败则回退到协议端原生 API。"""
+        """尝试向指定 QQ 发送临时会话/私聊消息。"""
         # 方案 1：通过 context.send_message 发送（标准 AstrBot 方式）
         try:
-            platform = "aiocqhttp"
+            platform_name = "aiocqhttp"
             if event.unified_msg_origin:
-                platform = event.unified_msg_origin.split(":")[0]
+                platform_name = event.unified_msg_origin.split(":")[0]
             # 私聊 UMO 格式示例: aiocqhttp:FriendMessage:123456
-            private_umo = f"{platform}:FriendMessage:{user_id}"
+            private_umo = f"{platform_name}:FriendMessage:{user_id}"
             chain = MessageChain().message(message)
             await self.context.send_message(private_umo, chain)
             logger.info(f"[NewcomerVerify] 标准 API 私聊成功: {user_id}")
@@ -166,24 +174,29 @@ class NewcomerVerifyPlugin(Star):
                 f"[NewcomerVerify] 标准 API 私聊失败，尝试回退: {e}"
             )
 
-        # 方案 2：回退到 NapCat / aiocqhttp 原生 API
+        # 方案 2：回退到 NapCat / aiocqhttp 原生 API（携带 group_id 触发临时会话）
         try:
-            from astrbot.api.platform import AiocqhttpAdapter
+            from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_platform_adapter import (
+                AiocqhttpAdapter,
+            )
 
             platform = self.context.get_platform(
                 filter.PlatformAdapterType.AIOCQHTTP
             )
             if platform and isinstance(platform, AiocqhttpAdapter):
                 bot = platform.get_client()
-                payloads = {
+                payloads: dict = {
                     "user_id": int(user_id),
                     "message": [
                         {"type": "text", "data": {"text": message}}
                     ],
                 }
+                # 携带 group_id 后 NapCat 会走群内临时会话通道，无需加好友
+                if group_id:
+                    payloads["group_id"] = int(group_id)
                 await bot.api.call_action("send_private_msg", **payloads)
                 logger.info(
-                    f"[NewcomerVerify] 回退 API 私聊成功: {user_id}"
+                    f"[NewcomerVerify] 回退 API {'临时会话' if group_id else '私聊'}成功: {user_id}"
                 )
                 return True
         except Exception as e:
@@ -191,9 +204,55 @@ class NewcomerVerifyPlugin(Star):
 
         return False
 
+    async def _fallback_group_remind(
+        self,
+        event: AstrMessageEvent,
+        group_id: str,
+        user_id: str,
+        welcome_msg: str,
+    ) -> None:
+        """临时会话发送失败时，在群内 @ 新人并说明验证规则。"""
+        key = f"{group_id}:{user_id}"
+        timeout_minutes = int(self.config.get("timeout_minutes", 10))
+        expire_time = time.time() + timeout_minutes * 60
+        self.pending_users[key] = {
+            "group_id": group_id,
+            "user_id": user_id,
+            "group_umo": event.unified_msg_origin,
+            "expire_time": expire_time,
+            "mode": "group_at",  # 标记为群内验证模式
+        }
+        self._save_pending()
+
+        task = asyncio.create_task(
+            self._timeout_handler(key, group_id, user_id)
+        )
+        self.pending_tasks[key] = task
+
+        try:
+            chain = [
+                Comp.At(qq=int(user_id)),
+                Comp.Plain(
+                    f" 欢迎入群！由于私聊受限，请直接在群里回复本条消息或发送任意内容完成验证。"
+                    f"（超时时间：{timeout_minutes} 分钟）"
+                ),
+            ]
+            await self.context.send_message(event.unified_msg_origin, chain)
+        except Exception as e:
+            logger.error(f"[NewcomerVerify] 群内兜底提醒也失败: {e}")
+
     @filter.event_message_type(EventMessageType.PRIVATE_MESSAGE)
     async def on_private_message(self, event: AstrMessageEvent):
         """监听私聊回复，若发送者在等待列表中，则视为通过验证。"""
+        await self._check_verify_pass(event)
+
+    @filter.event_message_type(EventMessageType.GROUP_MESSAGE)
+    async def on_group_message(self, event: AstrMessageEvent):
+        """监听群消息，用于兜底模式（临时会话发不了时）或新人直接在群内回复完成验证。"""
+        await self._check_verify_pass(event)
+
+    async def _check_verify_pass(self, event: AstrMessageEvent) -> None:
+        """检查当前消息是否来自等待列表中的新人，如果是则视为通过验证。"""
         sender_id = str(event.get_sender_id())
 
         matched_key: Optional[str] = None
@@ -209,6 +268,13 @@ class NewcomerVerifyPlugin(Star):
         group_id = str(info.get("group_id", ""))
         user_id = str(info.get("user_id", ""))
         group_umo = info.get("group_umo", "")
+        verify_mode = info.get("mode", "private")
+
+        # 若是群消息，需要确认是在同一个群
+        if verify_mode == "group_at":
+            msg_group_id = str(getattr(event.message_obj, "group_id", ""))
+            if msg_group_id != group_id:
+                return
 
         # 取消超时任务
         task = self.pending_tasks.pop(matched_key, None)
@@ -219,7 +285,10 @@ class NewcomerVerifyPlugin(Star):
         self.pending_users.pop(matched_key, None)
         self._save_pending()
 
-        logger.info(f"[NewcomerVerify] 用户 {user_id} 完成入群验证")
+        logger.info(
+            f"[NewcomerVerify] 用户 {user_id} 完成入群验证"
+            f"（通过方式: {verify_mode}）"
+        )
 
         # 在群聊发送通过公告
         if group_umo:
