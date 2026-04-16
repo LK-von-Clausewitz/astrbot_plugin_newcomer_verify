@@ -230,13 +230,14 @@ class NewcomerVerifyPlugin(Star):
         self.pending_tasks[key] = task
 
         try:
-            chain = [
-                Comp.At(qq=int(user_id)),
+            chain = MessageChain()
+            chain.append(Comp.At(qq=int(user_id)))
+            chain.append(
                 Comp.Plain(
                     f" 欢迎入群！由于私聊受限，请直接在群里回复本条消息或发送任意内容完成验证。"
                     f"（超时时间：{timeout_minutes} 分钟）"
-                ),
-            ]
+                )
+            )
             await self.context.send_message(event.unified_msg_origin, chain)
         except Exception as e:
             logger.error(f"[NewcomerVerify] 群内兜底提醒也失败: {e}")
@@ -298,10 +299,9 @@ class NewcomerVerifyPlugin(Star):
             announcement = announcement.replace("{nickname}", nickname)
 
             try:
-                chain = [
-                    Comp.At(qq=int(user_id)),
-                    Comp.Plain(f" {announcement}"),
-                ]
+                chain = MessageChain()
+                chain.append(Comp.At(qq=int(user_id)))
+                chain.append(Comp.Plain(f" {announcement}"))
                 await self.context.send_message(group_umo, chain)
             except Exception as e:
                 logger.error(f"[NewcomerVerify] 发送通过公告失败: {e}")
@@ -329,10 +329,9 @@ class NewcomerVerifyPlugin(Star):
         announcement = announcement.replace("{nickname}", "新人")
 
         # 构建消息链
-        chain: list = [
-            Comp.At(qq=int(user_id)),
-            Comp.Plain(f" {announcement}"),
-        ]
+        chain = MessageChain()
+        chain.append(Comp.At(qq=int(user_id)))
+        chain.append(Comp.Plain(f" {announcement}"))
 
         admin_list = self.config.get("admin_qq_list", [])
         if admin_list:
@@ -344,7 +343,8 @@ class NewcomerVerifyPlugin(Star):
                     continue
             if at_admins:
                 chain.append(Comp.Plain("\n请管理员尽快处理: "))
-                chain.extend(at_admins)
+                for at in at_admins:
+                    chain.append(at)
 
         try:
             await self.context.send_message(group_umo, chain)
