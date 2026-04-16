@@ -263,8 +263,11 @@ class NewcomerVerifyPlugin(Star):
             return
 
         # 防御 2：排除空消息（系统消息/回显消息可能内容为空）
+        # 但允许图片、表情等非文本消息完成验证
         message_str = (getattr(event, "message_str", "") or "").strip()
-        if not message_str:
+        msg_chain = getattr(event.message_obj, "message", []) or []
+        has_content = bool(message_str) or len(msg_chain) > 0
+        if not has_content:
             return
 
         matched_key: Optional[str] = None
