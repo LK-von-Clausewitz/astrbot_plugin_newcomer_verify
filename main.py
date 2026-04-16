@@ -13,10 +13,10 @@ from astrbot.api.star import Context, Star, register
 
 @register(
     "newcomer_verify",
-    "AI Assistant",
+    "LK-von-Clausewitz",
     "QQ群新人入群验证插件：向新人发送私聊验证，超时未回应则在群内公布并通知管理员",
     "1.0.0",
-    "https://github.com/yourname/astrbot_plugin_newcomer_verify",
+    "https://github.com/LK-von-Clausewitz/astrbot_plugin_newcomer_verify",
 )
 class NewcomerVerifyPlugin(Star):
     def __init__(self, context: Context, config: dict):
