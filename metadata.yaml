@@ -1,0 +1,9 @@
+name: astrbot_plugin_newcomer_verify
+desc: 基于 AstrBot + NapCat 的 QQ 群聊新人入群验证插件。机器人自动向新人发送私聊验证消息，若规定时间内未回应，则在群聊中公布结果并通知管理员。
+author: AI Assistant
+version: 1.0.0
+repo: https://github.com/yourname/astrbot_plugin_newcomer_verify
+display_name: 新人入群验证
+support_platforms:
+  - aiocqhttp
+astrbot_version: ">=4.0"

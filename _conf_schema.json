@@ -1,0 +1,44 @@
+{
+  "welcome_message": {
+    "description": "向新人发送的私聊验证消息，支持 {timeout} 占位符表示超时时间（分钟）",
+    "type": "string",
+    "hint": "例如：欢迎加入本群！请在 {timeout} 分钟内回复本条消息完成入群验证。",
+    "default": "欢迎加入本群！请在 {timeout} 分钟内回复本条消息完成入群验证，超时将被记录并通知管理员处理。"
+  },
+  "timeout_minutes": {
+    "description": "验证超时时间（分钟）",
+    "type": "int",
+    "hint": "建议设置为 5-30 分钟",
+    "default": 10
+  },
+  "admin_qq_list": {
+    "description": "管理员 QQ 号列表，超时后会 @ 这些管理员",
+    "type": "list",
+    "hint": "填写需要被通知的管理员 QQ 号",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  },
+  "enabled_groups": {
+    "description": "启用新人验证的群号列表，为空则对所有群启用",
+    "type": "list",
+    "hint": "例如：123456, 789012。为空表示全部群聊都启用",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  },
+  "pass_announcement": {
+    "description": "通过验证后在群里的公布消息，支持 {nickname}、{user_id} 占位符",
+    "type": "string",
+    "hint": "例如：新人 @{nickname}({user_id}) 已完成入群验证，大家欢迎！",
+    "default": "✅ 新人 {nickname}({user_id}) 已完成入群验证，大家欢迎！"
+  },
+  "timeout_announcement": {
+    "description": "超时后在群里的公布消息，支持 {nickname}、{user_id} 占位符",
+    "type": "string",
+    "hint": "例如：新人 @{nickname}({user_id}) 未在规定时间内完成入群验证，请管理员尽快处理。",
+    "default": "⚠️ 新人 {nickname}({user_id}) 未在规定时间内完成入群验证，请管理员尽快处理。"
+  }
+}
