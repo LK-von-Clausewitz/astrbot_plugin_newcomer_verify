@@ -142,6 +142,7 @@ class NewcomerVerifyPlugin(Star):
             "user_id": user_id,
             "group_umo": event.unified_msg_origin,
             "expire_time": expire_time,
+            "start_time": time.time(),
         }
         self._save_pending()
 
@@ -255,6 +256,16 @@ class NewcomerVerifyPlugin(Star):
     async def _check_verify_pass(self, event: AstrMessageEvent) -> None:
         """检查当前消息是否来自等待列表中的新人，如果是则视为通过验证。"""
         sender_id = str(event.get_sender_id())
+        self_id = str(event.get_self_id())
+
+        # 防御 1：排除机器人自己发送的消息（某些协议可能会回显 self-message）
+        if sender_id == self_id:
+            return
+
+        # 防御 2：排除空消息（系统消息/回显消息可能内容为空）
+        message_str = (getattr(event, "message_str", "") or "").strip()
+        if not message_str:
+            return
 
         matched_key: Optional[str] = None
         for key, info in self.pending_users.items():
@@ -270,6 +281,15 @@ class NewcomerVerifyPlugin(Star):
         user_id = str(info.get("user_id", ""))
         group_umo = info.get("group_umo", "")
         verify_mode = info.get("mode", "private")
+        start_time = info.get("start_time", 0)
+
+        # 防御 3：加入最小时间间隔，防止发送验证消息后立即被系统回显/自动回复误触发
+        if time.time() - start_time < 2:
+            logger.debug(
+                f"[NewcomerVerify] 收到来自 {user_id} 的消息但时间过短，"
+                "忽略以防误判"
+            )
+            return
 
         # 若是群消息，需要确认是在同一个群
         if verify_mode == "group_at":
